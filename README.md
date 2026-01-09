@@ -111,7 +111,7 @@
 
 ### 📦 1. Клонирование репозитория
 ```bash
-git clone https://github.com/ARosic1991/TunnelBotForXRay.git
+git clone https://github.com/AndreySorich/TunnelBotForXRay.git
 cd TunnelBotForXRay
 ```
 ### 🔧 2. Установка зависимостей
