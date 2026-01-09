@@ -33,7 +33,7 @@
 ## ✨ Добавленный функционал
 
 <p align="center">
-  <i>Расширенная версия на основе <a href="https://github.com/QueenDekim/XRay-bot">XRay-bot</a></i>
+  <b>Расширенная версия на основе <a href="https://github.com/QueenDekim/XRay-bot">XRay-bot</a></b>
 </p>
 
 <table>
@@ -207,7 +207,5 @@ Telegram Stars – встроенная валюта Telegram
 
 Моим коллегам и друзьям за тестировани   
 
-
-<p align="center">
   <i>Моя рабочая версия <a href="https://t.me/TunnelBot_bot/">@TunnelBot</a></i>
-</p>
+
