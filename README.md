@@ -143,7 +143,28 @@ REALITY_SPIDER_X=/
 TINKOFF_PAY_URL=your_tinkoff_payment_link
 ```
 ### 🤖 4. Настройка бота через @BotFather
-
-
+### 🚀 5. Запуск бота
+```bash
+cd src
+python app.py
+```
+💡 Примечание: База данных создается автоматически при первом запуске
+### 📂 Структура проекта
+```text
+TunnelBotForXRay/
+├── src/                          # Исходный код
+│   ├── bot.log                   # Основной лог
+│   ├── payments.log              # Логи платежей
+│   ├── app.py                    # Основной файл запуска
+│   ├── config.py                 # Конфигурация бота
+│   ├── database.py               # Работа с БД и X-UI API
+│   ├── handlers.py               # Обработчики команд
+│   ├── notifications.py          # Система уведомлений
+│   └── functions.py              # Вспомогательные функции
+├── .env.example                  # Пример конфигурации
+├── requirements.txt              # Зависимости Python
+├── README.md                     # Эта документация
+└── logs/                         # Логи работы
+```
 
 
