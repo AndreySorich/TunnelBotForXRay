@@ -52,23 +52,24 @@ src/
 
 ## 📦 Требования
 - Python **3.8+**  
-- Библиотеки из `requirements.txt`:
-Устанавливаются командой: pip install -r requirements.txt 
+- Библиотеки из `requirements.txt`
+- Устанавливаются командой: `pip install -r requirements.txt`
+
 
 # 🛠 Установка и настройка
 ## 1. Клонируйте репозиторий
 
-git clone https://github.com/ARosic1991/TunnelBotForXRay.git
+`git clone https://github.com/ARosic1991/TunnelBotForXRay.git`
 
-cd TunnelBotForXRay
+`cd TunnelBotForXRay`
 
 ## 2. Установите зависимости
 
-pip install -r requirements.txt 
+`pip install -r requirements.txt`
 
 ## 3. Настройте переменные окружения
 
-Создайте файл .env и заполните его:
+Создайте файл `.env` и заполните его:
 
 **Telegram Bot**
 
