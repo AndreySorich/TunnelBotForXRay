@@ -113,3 +113,37 @@
 ```bash
 git clone https://github.com/ARosic1991/TunnelBotForXRay.git
 cd TunnelBotForXRay
+```
+### 🔧 2. Установка зависимостей
+```bash
+pip install -r requirements.txt
+```
+### ⚙️ 3. Настройка конфигурации
+Создайте файл `.env` на основе `.env.example`:
+```env
+# ========= TELEGRAM BOT =========
+BOT_TOKEN=your_telegram_bot_token
+ADMINS=123456789,987654321
+
+# ========= X-UI API =========
+XUI_API_URL=http://your-server.com:54321
+XUI_USERNAME=admin
+XUI_PASSWORD=your_password
+XUI_HOST=vpn.your-domain.com
+INBOUND_ID=1
+
+# ========= REALITY (опционально) =========
+REALITY_PUBLIC_KEY=your_public_key
+REALITY_FINGERPRINT=chrome
+REALITY_SNI=example.com
+REALITY_SHORT_ID=1234567890
+REALITY_SPIDER_X=/
+
+# ========= ПЛАТЕЖИ =========
+TINKOFF_PAY_URL=your_tinkoff_payment_link
+```
+### 🤖 4. Настройка бота через @BotFather
+
+
+
+
