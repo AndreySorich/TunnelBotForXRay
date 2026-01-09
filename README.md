@@ -208,3 +208,6 @@ Telegram Stars – встроенная валюта Telegram
 Моим коллегам и друзьям за тестировани   
 
 
+<p align="center">
+  <i>Моя рабочая версия <a href="https://t.me/TunnelBot_bot/">@TunnelBot</a></i>
+</p>
