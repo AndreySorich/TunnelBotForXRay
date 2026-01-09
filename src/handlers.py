@@ -9,18 +9,244 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import config
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import LabeledPrice
+class HelpState(StatesGroup):
+    waiting_for_message = State()
+from aiogram.types import CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram import F
+from aiogram.types import Message
 from database import (
     StaticProfile, get_user, create_user, update_subscription, 
+    add_time_to_subscription, remove_time_from_subscription,
     get_all_users, create_static_profile, get_static_profiles, 
-    User, Session, get_user_stats as db_user_stats
+    User, Session, get_user_stats as db_user_stats,
+    get_admin_users
 )
 from functions import create_vless_profile, delete_client_by_email, generate_vless_url, get_user_stats, create_static_client, get_global_stats, get_online_users
+from notifications import send_subscription_extended_notification, send_test_notification
 
+#логируем 
+from logging.handlers import RotatingFileHandler
+import os
+
+# Получаем логгер для текущего модуля
 logger = logging.getLogger(__name__)
+
+# Для платежей используйте специальный логгер
+payments_logger = logging.getLogger('payments')
+
+from aiogram.types import BotCommand
+
+# Устанавливаем главное меню Telegram
+async def set_main_menu(bot: Bot):
+    """
+    Устанавливает боковое меню Telegram с командами: menu, Подключить, Помощь
+    """
+    commands = [
+        BotCommand(command="menu", description="📱 Меню"),
+        BotCommand(command="renew", description="💳 Продлить подписку"), 
+        BotCommand(command="connect", description="🔗 Подключить VPN"),
+        BotCommand(command="help", description="❓ Помощь")
+    ]
+    await bot.set_my_commands(commands)
+    logger.info("✅ Главное меню Telegram установлено")
+
+LOG_DIR = "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+payment_logger = logging.getLogger("payments")
+payment_logger.setLevel(logging.INFO)
+
+handler = RotatingFileHandler(
+    filename=os.path.join(LOG_DIR, "payments.log"),
+    maxBytes=5 * 1024 * 1024,  # 5 MB
+    backupCount=3,
+    encoding="utf-8"
+)
+
+formatter = logging.Formatter(
+    "%(asctime)s | %(levelname)s | %(message)s"
+)
+handler.setFormatter(formatter)
+
+payment_logger.addHandler(handler)
+#логируем
 
 router = Router()
 
 MAX_MESSAGE_LENGTH = 4096
+
+# ------------------------------
+# FakeCallback для имитации CallbackQuery из Message
+# ------------------------------
+class FakeCallback:
+    def __init__(self, message: Message, data: str):
+        self.message = message
+        self.from_user = message.from_user
+        self.data = data
+
+    async def answer(self, *args, **kwargs):
+        # Пустая заглушка, т.к. в callback.answer() ничего не нужно для команд
+        pass
+
+
+# ------------------------------
+# Команда /renew
+# ------------------------------
+@router.message(Command("renew"))
+async def renew_cmd(message: Message):
+    user = await get_user(message.from_user.id)
+    if not user:
+        await message.answer("Сначала запустите бота командой /start")
+        return
+
+    builder = build_subscription_keyboard(back_callback="back_to_menu")
+
+    now = datetime.utcnow()
+
+    if user.subscription_end > now:
+        days_left = (user.subscription_end - now).days
+        text = (
+            f"📅 Ваша подписка **активна**\n"
+            f"⏳ Осталось дней: **{days_left}**\n"
+            f"📅 Истекает: **{user.subscription_end:%d.%m.%Y}**\n\n"
+            "💵 **Выберите период продления:**"
+        )
+    else:
+        text = (
+            "⚠️ **Ваша подписка истекла**\n\n"
+            "💵 **Выберите период для активации:**"
+        )
+
+    await message.answer(
+        text,
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
+
+#### подписка 
+def build_subscription_keyboard(back_callback: str):
+    builder = InlineKeyboardBuilder()
+
+    for months in sorted(config.PRICES.keys()):
+        rub_price = config.calculate_price(months)
+        stars_price = config.STARS_PRICES.get(months)
+
+        price_info = config.PRICES[months]
+        discount_text = (
+            f" (-{price_info['discount_percent']}%)"
+            if price_info["discount_percent"] > 0
+            else ""
+        )
+
+        button_text = (
+            f"{months} мес. — "
+            f"{rub_price} ₽{discount_text} / "
+            f"{stars_price} ⭐"
+        )
+
+        builder.button(
+            text=button_text,
+            callback_data=f"choose_pay_{months}"
+        )
+
+    builder.button(text="⬅️ Назад", callback_data=back_callback)
+    builder.adjust(1)
+
+    return builder
+
+
+# ------------------------------
+# Команда /connect
+# ------------------------------
+@router.message(Command("connect"))
+async def connect_cmd(message: Message):
+    """
+    Прямой вызов функции подключения VPN
+    """
+    user = await get_user(message.from_user.id)
+    if not user:
+        await message.answer("❌ Сначала запустите бота командой /start")
+        return
+    
+    if user.subscription_end < datetime.utcnow():
+        await message.answer("⚠️ Ваша подписка истекла! Используйте /menu для продления.")
+        return
+    
+    if not user.vless_profile_data:
+        # Создаем новый профиль
+        await message.answer("⚙️ Создаем ваш VPN профиль...")
+        profile_data = await create_vless_profile(user.telegram_id)
+        
+        if not profile_data:
+            await message.answer("🛑 Ошибка при создании профиля. Попробуйте позже.")
+            return
+        
+        # Сохраняем профиль в БД
+        with Session() as session:
+            db_user = session.query(User).filter_by(telegram_id=user.telegram_id).first()
+            if db_user:
+                db_user.vless_profile_data = json.dumps(profile_data)
+                session.commit()
+        
+        # Уведомление админов
+        for admin_id in config.ADMINS:
+            try:
+                await message.bot.send_message(
+                    admin_id,
+                    "🟢 *Создан новый VPN-клиент*\n\n"
+                    f"👤 Telegram ID: `{user.telegram_id}`\n"
+                    f"👤 Telegram User: `{user.full_name}`\n"
+                    f"📧 Email: `{profile_data['email']}`\n"
+                    f"🌐 Inbound: `{profile_data['remark']}`\n"
+                    f"🔐 Security: `{profile_data['security']}`",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Admin notify error ({admin_id}): {e}")
+        
+        # Обновляем данные пользователя
+        user = await get_user(user.telegram_id)
+    
+    # Получаем данные профиля
+    try:
+        profile_data = json.loads(user.vless_profile_data)
+    except:
+        await message.answer("❌ Ошибка чтения данных профиля. Попробуйте создать профиль заново.")
+        return
+    
+    # Генерируем ссылку
+    vless_url = generate_vless_url(profile_data)
+    
+    text = (
+        "🎉 **Ваш VPN профиль готов!**\n\n"
+        "ℹ️ **Инструкция по подключению:**\n"
+        "1. Скачайте приложение для вашей платформы\n"
+        "2. Скопируйте эту ссылку и импортируйте в приложение:\n\n"
+        f"`{vless_url}`\n\n"
+        "3. Активируйте соединение в приложении."
+    )
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text='🖥️ Windows [V2RayN]', url='https://github.com/2dust/v2rayN/releases/download/7.13.8/v2rayN-windows-64-desktop.zip')
+    builder.button(text='🐧 Linux [NekoBox]', url='https://github.com/MatsuriDayo/nekoray/releases/download/4.0.1/nekoray-4.0.1-2024-12-12-debian-x64.deb')
+    builder.button(text='🍎 Mac [V2RayU]', url='https://github.com/yanue/V2rayU/releases/download/v4.2.6/V2rayU-64.dmg')
+    builder.button(text='🍏 iOS [V2RayTun]', url='https://apps.apple.com/ru/app/v2raytun/id6476628951')
+    builder.button(text='🤖 Android [V2RayNG]', url='https://github.com/2dust/v2rayNG/releases/download/1.10.16/v2rayNG_1.10.16_arm64-v8a.apk')
+    builder.button(text="⬅️ В меню", callback_data="back_to_menu")
+    builder.adjust(2, 2, 1, 1)
+    
+    await message.answer(text, reply_markup=builder.as_markup(), parse_mode='Markdown')
+
+# ------------------------------
+# Команда /help
+# ------------------------------
+@router.message(Command("help"))
+async def help_cmd(message: Message, state: FSMContext):
+    await show_help(message, state)
+
 
 class AdminStates(StatesGroup):
     ADD_TIME = State()
@@ -116,7 +342,7 @@ async def start_cmd(message: Message, bot: Bot):
             username=message.from_user.username,
             is_admin=is_admin
         )
-        await message.answer(f"Добро пожаловать в VPN бота `{(await bot.get_me()).full_name}`!\nВам предоставлен **бесплатный** тестовый период на **3 дня**!", parse_mode='Markdown')
+        await message.answer(f"Добро пожаловать в TunnelBot `{(await bot.get_me()).full_name}`!\nВам предоставлен **бесплатный** тестовый период на **3 дня**!", parse_mode='Markdown')
         await asyncio.sleep(2)
     
     # Обновляем данные если есть изменения
@@ -155,77 +381,290 @@ async def menu_cmd(message: Message, bot: Bot):
     
     await show_menu(bot, message.from_user.id)
 
+
 @router.callback_query(F.data == "help")
-async def help_msg(callback: CallbackQuery):
+async def help_callback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    await show_help(callback.message, state)
+
+async def show_help(message, state: FSMContext):
     builder = InlineKeyboardBuilder()
-    builder.button(text="⬅️ Назад", callback_data="back_to_menu")
-    text = (
-        f"О боте:\n"
-        "<b>Разработчики:</b>\n"
-        "@QueenDekim | @cpn_moris\n"
-        "<i>Отдельное спасибо</i> @ascento <i>за помощь в разработке</i>\n"
-        "<a href='https://t.me/+OJsul9nc9hYzZjEy'>Официальный чат проекта</a>"
+    builder.button(
+        text="🌐 Проверить IP", 
+        url="https://2ip.ru/"
     )
-    await callback.message.answer(text, parse_mode='HTML', reply_markup=builder.as_markup())
+    builder.button(text="⬅️ Назад", callback_data="back_to_menu")
+    builder.adjust(1)
+
+    text = (
+        "<b>🆘 Помощь</b>\n\n"
+        "💬 Отправь текстовое сообщение или изображение (скриншот), чтобы мы получили твоё обращение.\n\n"
+        "✅ Для подключения VPN жми команду: <b>/connect</b>\n"
+        "<i>Там ты найдёшь доступные приложения и свой токен.</i>\n\n"
+        "🌐 Проверить работу VPN можно на сайте <b>2ip.ru</b>\n"
+        "📍 Ваш IP адрес: <b>185.82.218.35 (xray.a-sorich.ru)</b>\n\n"
+    )
+
+    await state.set_state(HelpState.waiting_for_message)
+
+    await message.answer(
+        text,
+        parse_mode="HTML",
+        reply_markup=builder.as_markup()
+    )
+
+@router.message(HelpState.waiting_for_message, F.photo)
+async def help_forward_photo(message: Message, state: FSMContext):
+    user = message.from_user
+
+    caption = (
+        "🆘 <b>Новое обращение (изображение)</b>\n\n"
+        f"👤 Пользователь: {user.full_name}\n"
+        f"🔗 Username: @{user.username if user.username else 'нет'}\n"
+        f"🆔 ID: {user.id}"
+    )
+
+    photo = message.photo[-1].file_id  # самое большое фото
+
+    for admin_id in config.ADMINS:
+        await message.bot.send_photo(
+            admin_id,
+            photo=photo,
+            caption=caption,
+            parse_mode="HTML"
+        )
+
+        # если пользователь добавил подпись к фото
+        if message.caption:
+            await message.bot.send_message(
+                admin_id,
+                f"💬 <b>Комментарий пользователя:</b>\n{message.caption}",
+                parse_mode="HTML"
+            )
+
+    await message.answer(
+        "✅ <b>Обращение с изображением отправлено</b>\n\n"
+        "Администратор свяжется с тобой в течение <b>3 часов</b>.",
+        parse_mode="HTML"
+    )
+
+    await state.clear()
+
+@router.message(HelpState.waiting_for_message)
+async def help_forward(message: Message, state: FSMContext):
+    user = message.from_user
+
+    admin_text = (
+        "🆘 <b>Новое обращение</b>\n\n"
+        f"👤 Пользователь: {user.full_name}\n"
+        f"🔗 Username: @{user.username if user.username else 'нет'}\n"
+        f"🆔 ID: {user.id}\n\n"
+        f"💬 Сообщение:\n{message.text}"
+    )
+
+    for admin_id in config.ADMINS:
+        await message.bot.send_message(
+            admin_id,
+            admin_text,
+            parse_mode="HTML"
+        )
+
+    await message.answer(
+        "✅ <b>Обращение отправлено</b>\n\n"
+        "Администратор свяжется с тобой в течение <b>3 часов</b>.\n"
+        "Пожалуйста, не дублируй запрос — это ускорит обработку 🙏",
+        parse_mode="HTML"
+    )
+
+    await state.clear()
+    
+
+
+@router.message(HelpState.waiting_for_message)
+async def help_unsupported(message: Message):
+    await message.answer(
+        "❗️Пожалуйста, отправь текст или изображение.\n"
+        "Другие типы сообщений пока не поддерживаются."
+    )
+
+
 
 @router.callback_query(F.data == "renew_sub")
 async def renew_subscription(callback: CallbackQuery):
     builder = InlineKeyboardBuilder()
-    
-    # Добавляем кнопки для каждого варианта подписки
+
     for months in sorted(config.PRICES.keys()):
+        rub_price = config.calculate_price(months)
+        stars_price = config.STARS_PRICES.get(months)
+
         price_info = config.PRICES[months]
-        final_price = config.calculate_price(months)
-        
-        discount_text = ""
-        if price_info["discount_percent"] > 0:
-            discount_text = f" (-{price_info['discount_percent']}%)"
-            
-        button_text = f"{months} мес. - {final_price} руб.{discount_text}"
-        builder.button(text=button_text, callback_data=f"pay_{months}")
-    
+        discount_text = (
+            f" (-{price_info['discount_percent']}%)"
+            if price_info["discount_percent"] > 0
+            else ""
+        )
+
+        button_text = (
+            f"{months} мес. — "
+            f"{rub_price} ₽{discount_text} / "
+            f"{stars_price} ⭐"
+        )
+
+        builder.button(
+            text=button_text,
+            callback_data=f"choose_pay_{months}"
+        )
+
     builder.button(text="⬅️ Назад", callback_data="back_to_menu")
     builder.adjust(1)
-    
+
     await callback.message.edit_text(
         "💵 **Выберите период подписки:**",
         reply_markup=builder.as_markup(),
-        parse_mode='Markdown'
+        parse_mode="Markdown"
     )
 
-@router.callback_query(F.data.startswith("pay_"))
-async def process_payment(callback: CallbackQuery, bot: Bot):
+
+
+@router.callback_query(F.data.startswith("choose_pay_"))
+async def choose_payment_method(callback: CallbackQuery):
     await callback.answer()
+
+    months = int(callback.data.split("_")[2])
+
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="⭐ Telegram Srars",
+        callback_data=f"pay_stars_{months}"
+    )
+    builder.button(
+        text="💳 Перевод (T-Bank)",
+        callback_data=f"pay_tinkoff_{months}"
+    )
+    builder.button(text="⬅️ Назад", callback_data="renew_sub")
+    builder.adjust(1)
+
+    await callback.message.edit_text(
+        "💳 **Выберите способ оплаты:**",
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
     
-    try:
-        months = int(callback.data.split("_")[1])
-        if months not in config.PRICES:
-            await callback.message.answer("❌ Неверный период подписки")
-            return
-            
-        final_price = config.calculate_price(months)
-        suffix = "месяц" if months == 1 else "месяца" if months in (2,3,4) else "месяцев"
-        # Создаем инвойс для оплаты
-        prices = [LabeledPrice(label=f"VPN подписка на {months} мес.", amount=final_price * 100)]
-        if config.PAYMENT_TOKEN:
-            await bot.send_invoice(
-                chat_id=callback.from_user.id,
-                title=f"VPN подписка на {months} месяцев",
-                description=f"Доступ к VPN сервису на {months} {suffix}",
-                payload=f"subscription_{months}",
-                provider_token=config.PAYMENT_TOKEN,
-                currency="RUB",
-                prices=prices,
-                start_parameter="create_subscription",
-                need_email=True,
-                need_phone_number=False
+    
+@router.callback_query(F.data.startswith("pay_stars_"))
+async def pay_stars(callback: CallbackQuery):
+    await callback.answer()
+
+    months = int(callback.data.split("_")[2])
+    stars_price = config.STARS_PRICES[months]
+
+    prices = [
+        LabeledPrice(
+            label=f"Подписка на {months} мес.",
+            amount=stars_price
+        )
+    ]
+
+    await callback.message.answer_invoice(
+        title="Подписка",
+        description=f"Доступ на {months} мес.",
+        prices=prices,
+        currency="XTR",
+        payload=f"subscription_{months}"
+    )
+
+
+
+
+@router.callback_query(F.data.startswith("pay_tinkoff_"))
+async def process_tinkoff_payment(callback: CallbackQuery):
+    await callback.answer()
+
+    months = int(callback.data.split("_")[2])
+    final_price = config.calculate_price(months)
+    #ЛОГИРУЕМ НАЖАТИЕ «ОПЛАТИТЬ»
+    payment_logger.info(
+        f"PAY_INIT | user_id={callback.from_user.id} | months={months} | price={final_price}"
+    )
+
+    user_id = callback.from_user.id
+    suffix = "месяц" if months == 1 else "месяца" if months in (2, 3, 4) else "месяцев"
+
+    text = (
+        "💳 **Оплата подписки VPN**\n\n"
+        f"📦 Период: **{months} {suffix}**\n"
+        f"💰 Сумма: **{final_price} ₽**\n\n"
+        "⚠️ **ВАЖНО!**\n"
+        "В комментарии к переводу укажите ваш **Telegram ID/USER**:\n"
+        f"`{user_id}`\n\n"
+        "После оплаты нажмите кнопку **«Я оплатил»**"
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="💸 Перейти к оплате",
+        url=config.TINKOFF_PAY_URL
+    )
+    builder.button(
+        text="✅ Я оплатил",
+        callback_data=f"paid_{months}"
+    )
+    builder.button(
+        text="⬅️ Назад",
+        callback_data="back_to_menu"
+    )
+    builder.adjust(1)
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=builder.as_markup(),
+        parse_mode="Markdown"
+    )
+
+# ОБНОВЛЕННЫЙ обработчик подтверждения оплаты
+@router.callback_query(F.data.startswith("paid_"))
+async def confirm_payment(callback: CallbackQuery, bot: Bot):
+    await callback.answer()
+
+    months = int(callback.data.split("_")[1])
+    user = await get_user(callback.from_user.id)
+
+    suffix = "месяц" if months == 1 else "месяца" if months in (2, 3, 4) else "месяцев"
+
+    await callback.message.edit_text(
+        "⏳ **Платёж отправлен на проверку**\n\n"
+        "Обычно проверка занимает до **10 минут**.\n"
+        "После подтверждения подписка будет активирована.\n\n"
+        "🔔 Вы получите уведомление, когда администратор подтвердит оплату.",
+        parse_mode="Markdown"
+    )
+
+    admin_text = (
+        "💰 **Новая оплата (проверить)**\n\n"
+        f"👤 {user.full_name}\n"
+        f"🆔 `{user.telegram_id}`\n"
+        f"📦 {months} {suffix}\n\n"
+        "Для подтверждения используйте команду:\n"
+        f"`/confirm_payment {user.telegram_id} {months}`"
+    )
+
+    for admin_id in config.ADMINS:
+        try:
+            # Добавляем кнопку для быстрого подтверждения
+            builder = InlineKeyboardBuilder()
+            builder.button(
+                text="✅ Подтвердить оплату", 
+                callback_data=f"confirm_payment_{user.telegram_id}_{months}"
             )
-        else:
-            await callback.message.answer("❌ Оплата временно недоступна")
-    except Exception as e:
-        logger.error(f"🛑 Payment error: {e}")
-        await callback.message.answer("❌ Ошибка при создании счета на оплату")
+            
+            await bot.send_message(
+                admin_id, 
+                admin_text, 
+                parse_mode="Markdown",
+                reply_markup=builder.as_markup()
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки админу {admin_id}: {e}")
 
 @router.pre_checkout_query()
 async def process_pre_checkout_query(pre_checkout_query: PreCheckoutQuery, bot: Bot):
@@ -239,7 +678,7 @@ async def process_successful_payment(message: Message, bot: Bot):
         if payload.startswith("subscription_"):
             months = int(payload.split("_")[1])
             final_price = config.calculate_price(months)  # Переводим обратно в рубли
-            
+            stars_paid = message.successful_payment.total_amount
             # Получаем информацию о пользователе
             user = await get_user(message.from_user.id)
             if not user:
@@ -250,10 +689,20 @@ async def process_successful_payment(message: Message, bot: Bot):
             now = datetime.utcnow()
             action_type = "продлена" if user.subscription_end > now else "куплена"
             
-            # Обновляем подписку
-            success = await update_subscription(message.from_user.id, months)
+            # Обновляем подписку с использованием новой функции
+            new_end_date = await update_subscription(message.from_user.id, months, is_admin_action=False)
             suffix = "месяц" if months == 1 else "месяца" if months in (2,3,4) else "месяцев"
-            if success:
+            
+            if new_end_date:
+                # Отправляем уведомление пользователю
+                await send_subscription_extended_notification(
+                    bot=bot,
+                    telegram_id=message.from_user.id,
+                    months=months,
+                    new_end_date=new_end_date,
+                    is_admin_action=False
+                )
+                
                 await message.answer(
                     f"✅ Оплата прошла успешно! Ваша подписка {action_type} на {months} {suffix}.\n\n"
                     "Спасибо за покупку! 🎉"
@@ -277,6 +726,7 @@ async def process_successful_payment(message: Message, bot: Bot):
         logger.error(f"🛑 Successful payment processing error: {e}")
         await message.answer("❌ Ошибка при обработке платежа")
 
+# ОБНОВЛЕННОЕ админ-меню с кнопкой тестирования уведомлений
 @router.callback_query(F.data == "admin_menu")
 async def admin_menu(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
@@ -284,7 +734,10 @@ async def admin_menu(callback: CallbackQuery):
         await callback.answer("🛑 Доступ запрещен!")
         return
     
-    total, with_sub, without_sub = await db_user_stats()
+    stats = await db_user_stats()
+    total = stats["total"]
+    with_sub = stats["with_active_subscription"]
+    without_sub = stats["without_subscription"]
     online_count = await get_online_users()
     
     text = (
@@ -300,12 +753,41 @@ async def admin_menu(callback: CallbackQuery):
     builder.button(text="📋 Список пользователей", callback_data="admin_user_list")
     builder.button(text="📊 Статистика исп. сети", callback_data="admin_network_stats")
     builder.button(text="📢 Рассылка", callback_data="admin_send_message")
+    builder.button(text="🔔 Тест уведомлений", callback_data="admin_test_notification")  # Новая кнопка
     builder.button(text="⬅️ Назад", callback_data="back_to_menu")
-    builder.adjust(2, 1, 1, 1, 1)
+    
+    builder.adjust(2, 1, 1, 1, 1, 1)
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode='Markdown')
 
-# Обработчики для управления временем подписки
+# НОВЫЙ обработчик тестирования уведомлений
+@router.callback_query(F.data == "admin_test_notification")
+async def admin_test_notification(callback: CallbackQuery, bot: Bot):
+    """Тестирование системы уведомлений"""
+    try:
+        await callback.answer()
+        
+        # Отправляем тестовое уведомление себе
+        success = await send_test_notification(bot, callback.from_user.id)
+        
+        if success:
+            await callback.message.answer(
+                "✅ *Тестовое уведомление отправлено!*\n\n"
+                "Проверьте, получили ли вы сообщение.",
+                parse_mode="Markdown"
+            )
+        else:
+            await callback.message.answer(
+                "❌ *Ошибка отправки уведомления*\n\n"
+                "Проверьте логи для деталей.",
+                parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Test notification error: {e}")
+        await callback.message.answer(f"❌ Ошибка: {str(e)}")
+
+# Обработчики для управления временем подписки (ОБНОВЛЕННЫЕ)
 @router.callback_query(F.data == "admin_add_time")
 async def admin_add_time_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()  # Снимаем анимацию
@@ -322,8 +804,9 @@ async def admin_add_time_user(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("Ошибка: ID должен быть числом")
 
+# ОБНОВЛЕННЫЙ обработчик добавления времени
 @router.message(AdminStates.ADD_TIME_AMOUNT)
-async def admin_add_time_amount(message: Message, state: FSMContext):
+async def admin_add_time_amount(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     user_id = data['user_id']
     parts = message.text.split()
@@ -334,26 +817,51 @@ async def admin_add_time_amount(message: Message, state: FSMContext):
     
     try:
         months, days, hours, minutes = map(int, parts)
-        total_seconds = (
-            months * 30 * 24 * 60 * 60 +
-            days * 24 * 60 * 60 +
-            hours * 60 * 60 +
-            minutes * 60
+        
+        # Используем новую функцию для добавления времени
+        new_end_date = await add_time_to_subscription(
+            telegram_id=user_id,
+            months=months,
+            days=days,
+            hours=hours,
+            minutes=minutes
         )
         
-        with Session() as session:
-            user = session.query(User).filter_by(telegram_id=user_id).first()
-            if user:
-                if user.subscription_end > datetime.utcnow():
-                    user.subscription_end += timedelta(seconds=total_seconds)
-                else:
-                    user.subscription_end = datetime.utcnow() + timedelta(seconds=total_seconds)
-                session.commit()
-                await message.answer(f"✅ Добавлено время пользователю {user_id}")
-            else:
-                await message.answer("❌ Пользователь не найден")
+        if new_end_date:
+            # Отправляем уведомление пользователю
+            total_months = round((months * 30 + days) / 30, 1)
+            await send_subscription_extended_notification(
+                bot=bot,
+                telegram_id=user_id,
+                months=total_months,
+                new_end_date=new_end_date,
+                is_admin_action=True
+            )
+            
+            # Формируем строку с добавленным временем
+            time_str_parts = []
+            if months > 0:
+                time_str_parts.append(f"{months} мес.")
+            if days > 0:
+                time_str_parts.append(f"{days} дн.")
+            if hours > 0:
+                time_str_parts.append(f"{hours} час.")
+            if minutes > 0:
+                time_str_parts.append(f"{minutes} мин.")
+            
+            time_str = ", ".join(time_str_parts)
+            
+            await message.answer(
+                f"✅ Время добавлено пользователю {user_id}:\n"
+                f"📅 Добавлено: {time_str}\n"
+                f"📅 Новая дата окончания: {new_end_date.strftime('%d.%m.%Y %H:%M')}"
+            )
+        else:
+            await message.answer(f"❌ Пользователь {user_id} не найден")
+            
     except Exception as e:
-        await message.answer(f"Ошибка: {str(e)}")
+        await message.answer(f"❌ Ошибка: {str(e)}")
+        logger.error(f"❌ Error adding time: {e}")
     finally:
         await state.clear()
 
@@ -373,8 +881,9 @@ async def admin_remove_time_user(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("Ошибка: ID должен быть числом")
 
+# ОБНОВЛЕННЫЙ обработчик удаления времени
 @router.message(AdminStates.REMOVE_TIME_AMOUNT)
-async def admin_remove_time_amount(message: Message, state: FSMContext):
+async def admin_remove_time_amount(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     user_id = data['user_id']
     parts = message.text.split()
@@ -385,27 +894,41 @@ async def admin_remove_time_amount(message: Message, state: FSMContext):
     
     try:
         months, days, hours, minutes = map(int, parts)
-        total_seconds = (
-            months * 30 * 24 * 60 * 60 +
-            days * 24 * 60 * 60 +
-            hours * 60 * 60 +
-            minutes * 60
+        
+        # Используем новую функцию для удаления времени
+        new_end_date = await remove_time_from_subscription(
+            telegram_id=user_id,
+            months=months,
+            days=days,
+            hours=hours,
+            minutes=minutes
         )
         
-        with Session() as session:
-            user = session.query(User).filter_by(telegram_id=user_id).first()
-            if user:
-                new_end = user.subscription_end - timedelta(seconds=total_seconds)
-                # Проверяем, чтобы не ушло в прошлое
-                if new_end < datetime.utcnow():
-                    new_end = datetime.utcnow()
-                user.subscription_end = new_end
-                session.commit()
-                await message.answer(f"✅ Удалено время у пользователя {user_id}")
-            else:
-                await message.answer("❌ Пользователь не найден")
+        if new_end_date:
+            # Формируем строку с удаленным временем
+            time_str_parts = []
+            if months > 0:
+                time_str_parts.append(f"{months} мес.")
+            if days > 0:
+                time_str_parts.append(f"{days} дн.")
+            if hours > 0:
+                time_str_parts.append(f"{hours} час.")
+            if minutes > 0:
+                time_str_parts.append(f"{minutes} мин.")
+            
+            time_str = ", ".join(time_str_parts)
+            
+            await message.answer(
+                f"✅ Время удалено у пользователя {user_id}:\n"
+                f"📅 Удалено: {time_str}\n"
+                f"📅 Новая дата окончания: {new_end_date.strftime('%d.%m.%Y %H:%M')}"
+            )
+        else:
+            await message.answer(f"❌ Пользователь {user_id} не найден")
+            
     except Exception as e:
-        await message.answer(f"Ошибка: {str(e)}")
+        await message.answer(f"❌ Ошибка: {str(e)}")
+        logger.error(f"❌ Error removing time: {e}")
     finally:
         await state.clear()
 
@@ -422,7 +945,7 @@ async def admin_user_list(callback: CallbackQuery):
 
 @router.callback_query(F.data == "user_list_active")
 async def handle_user_list_active(callback: CallbackQuery):
-    users = await get_all_users(with_subscription=True)
+    users = await get_all_users(with_active_subscription=True)
     await callback.answer()
     if not users:
         await callback.answer("Нет пользователей с активной подпиской")
@@ -447,7 +970,7 @@ async def handle_user_list_active(callback: CallbackQuery):
 @router.callback_query(F.data == "user_list_inactive")
 async def handle_user_list_inactive(callback: CallbackQuery):
     await callback.answer()
-    users = await get_all_users(with_subscription=False)
+    users = await get_all_users(with_active_subscription=False)
     if not users:
         await callback.answer("Нет пользователей без подписки")
         return
@@ -498,9 +1021,9 @@ async def admin_send_message(message: Message, state: FSMContext, bot: Bot):
     
     users = []
     if target == "active":
-        users = await get_all_users(with_subscription=True)
+        users = await get_all_users(with_active_subscription=True)
     elif target == "inactive":
-        users = await get_all_users(with_subscription=False)
+        users = await get_all_users(with_active_subscription=False)
     else:  # all
         users = await get_all_users()
     
@@ -522,6 +1045,110 @@ async def admin_send_message(message: Message, state: FSMContext, bot: Bot):
         f"• Всего: {len(users)}"
     )
     await state.clear()
+
+# НОВЫЙ обработчик для ручного подтверждения оплаты через кнопку
+@router.callback_query(F.data.startswith("confirm_payment_"))
+async def confirm_payment_by_admin(callback: CallbackQuery, bot: Bot):
+    """Подтверждение оплаты администратором через кнопку"""
+    try:
+        # Извлекаем данные из callback (формат: confirm_payment_{user_id}_{months})
+        _, _, user_id, months = callback.data.split("_")
+        if len(parts) < 3:
+            await callback.answer("❌ Некорректный запрос")
+            return
+        
+        user_id = int(user_id)
+        months = int(months)
+        
+        # Обновляем подписку
+        new_end_date = await update_subscription(user_id, months, is_admin_action=True)
+        
+        if new_end_date:
+            # Отправляем уведомление пользователю
+            await send_subscription_extended_notification(
+                bot=bot,
+                telegram_id=user_id,
+                months=months,
+                new_end_date=new_end_date,
+                is_admin_action=True
+            )
+            
+            # Отвечаем администратору
+            suffix = "месяц" if months == 1 else "месяца" if months in (2, 3, 4) else "месяцев"
+            await callback.answer("✅ Подписка успешно продлена!")
+            
+            # Обновляем сообщение с информацией
+            await callback.message.edit_text(
+                f"✅ *Оплата подтверждена!*\n\n"
+                f"👤 Пользователь: `{user_id}`\n"
+                f"📅 Продлено на: {months} {suffix}\n"
+                f"📅 Новая дата окончания: `{new_end_date.strftime('%d.%m.%Y %H:%M')}`\n\n"
+                f"✅ Уведомление отправлено пользователю.",
+                parse_mode="Markdown"
+            )
+        else:
+            await callback.answer("❌ Ошибка при продлении подписки")
+            await callback.message.edit_text("❌ Произошла ошибка при продлении подписки")
+            
+    except Exception as e:
+        logger.error(f"❌ Error confirming payment: {e}")
+        await callback.answer("❌ Произошла ошибка")
+
+# НОВАЯ команда для ручного подтверждения оплаты
+@router.message(Command("confirm_payment"))
+async def confirm_payment_command(message: Message, bot: Bot):
+    """Команда для ручного подтверждения оплаты администратором"""
+    user = await get_user(message.from_user.id)
+    if not user or not user.is_admin:
+        await message.answer("🛑 Доступ запрещен!")
+        return
+    
+    try:
+        # Парсим аргументы: /confirm_payment <user_id> <months>
+        args = message.text.split()
+        if len(args) < 3:
+            await message.answer(
+                "Использование:\n"
+                "`/confirm_payment <user_id> <months>`\n\n"
+                "Пример:\n"
+                "`/confirm_payment 123456789 3`"
+            )
+            return
+        
+        user_id = int(args[1])
+        months = int(args[2])
+        
+        # Обновляем подписку
+        new_end_date = await update_subscription(user_id, months, is_admin_action=True)
+        
+        if new_end_date:
+            # Отправляем уведомление пользователю
+            await send_subscription_extended_notification(
+                bot=bot,
+                telegram_id=user_id,
+                months=months,
+                new_end_date=new_end_date,
+                is_admin_action=True
+            )
+            
+            suffix = "месяц" if months == 1 else "месяца" if months in (2, 3, 4) else "месяцев"
+            
+            await message.answer(
+                f"✅ *Оплата подтверждена!*\n\n"
+                f"👤 Пользователь: `{user_id}`\n"
+                f"📅 Продлено на: {months} {suffix}\n"
+                f"📅 Новая дата окончания: `{new_end_date.strftime('%d.%m.%Y %H:%M')}`\n\n"
+                f"✅ Уведомление отправлено пользователю.",
+                parse_mode="Markdown"
+            )
+        else:
+            await message.answer(f"❌ Не удалось продлить подписку пользователю {user_id}")
+            
+    except ValueError:
+        await message.answer("❌ Ошибка: user_id и months должны быть числами")
+    except Exception as e:
+        logger.error(f"❌ Confirm payment error: {e}")
+        await message.answer(f"❌ Ошибка: {str(e)}")
 
 # Остальные обработчики остаются без изменений
 @router.callback_query(F.data == "static_profiles_menu")
@@ -612,22 +1239,48 @@ async def connect_profile(callback: CallbackQuery):
     if not user.vless_profile_data:
         await callback.message.edit_text("⚙️ Создаем ваш VPN профиль...")
         profile_data = await create_vless_profile(user.telegram_id)
-        
-        if profile_data:
-            with Session() as session:
-                db_user = session.query(User).filter_by(telegram_id=user.telegram_id).first()
-                if db_user:
-                    db_user.vless_profile_data = json.dumps(profile_data)
-                    session.commit()
-            user = await get_user(user.telegram_id)
-        else:
-            await callback.message.answer("🛑 Ошибка при создании профиля. Попробуйте позже.")
+
+        if not profile_data:
+            await callback.message.answer(
+                "🛑 Ошибка при создании профиля. Попробуйте позже."
+            )
             return
-    
+
+        # сохраняем профиль
+        with Session() as session:
+            db_user = session.query(User).filter_by(
+                telegram_id=user.telegram_id
+            ).first()
+            if db_user:
+                db_user.vless_profile_data = json.dumps(profile_data)
+                session.commit()
+
+        # 🔔 уведомление админов (БЕЗ else!)
+        for admin_id in config.ADMINS:
+            try:
+                await callback.bot.send_message(
+                    admin_id,
+                    "🟢 *Создан новый VPN-клиент*\n\n"
+                    f"👤 Telegram ID: `{user.telegram_id}`\n"
+                    f"👤 Telegram User: `{user.full_name}`\n"
+                    f"📧 Email: `{profile_data['email']}`\n"
+                    f"🌐 Inbound: `{profile_data['remark']}`\n"
+                    f"🔐 Security: `{profile_data['security']}`",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ Admin notify error ({admin_id}): {e}"
+                )
+
+        # перечитываем пользователя
+        user = await get_user(user.telegram_id)
+
     profile_data = safe_json_loads(user.vless_profile_data, default={})
     if not profile_data:
         await callback.message.answer("⚠️ У вас пока нет созданного профиля.")
         return
+        
     vless_url = generate_vless_url(profile_data)
     text = (
         "🎉 **Ваш VPN профиль готов!**\n\n"
@@ -646,8 +1299,12 @@ async def connect_profile(callback: CallbackQuery):
     builder.button(text='🤖 Android [V2RayNG]', url='https://github.com/2dust/v2rayNG/releases/download/1.10.16/v2rayNG_1.10.16_arm64-v8a.apk')
     builder.button(text="⬅️ Назад", callback_data="back_to_menu")
     builder.adjust(2, 2, 1, 1)
-
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode='Markdown')
+    
+    # проверяем, можно ли редактировать
+    if hasattr(callback.message, "edit_text"):
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode='Markdown')
+    else:
+        await callback.message.answer(text, reply_markup=builder.as_markup(), parse_mode='Markdown')
 
 @router.callback_query(F.data == "stats")
 async def user_stats(callback: CallbackQuery):
@@ -655,27 +1312,58 @@ async def user_stats(callback: CallbackQuery):
     if not user or not user.vless_profile_data:
         await callback.answer("⚠️ Профиль не создан")
         return
+    
     await callback.message.edit_text("⚙️ Загружаем вашу статистику...")
+    
+    # Статистика использования трафика
     profile_data = safe_json_loads(user.vless_profile_data, default={})
     stats = await get_user_stats(profile_data["email"])
 
     logger.debug(stats)
+    
+    # Обработка аплоада
     upload = f"{stats.get('upload', 0) / 1024 / 1024:.2f}"
     upload_size = 'MB' if int(float(upload)) < 1024 else 'GB'
     if upload_size == "GB":
-        upload = f"{int(float(upload) / 1024):.2f}"
+        upload = f"{float(upload) / 1024:.2f}"
 
+    # Обработка даунлоада
     download = f"{stats.get('download', 0) / 1024 / 1024:.2f}"
     download_size = 'MB' if int(float(download)) < 1024 else 'GB'
     if download_size == "GB":
-        download = f"{int(float(download) / 1024):.2f}"
-
+        download = f"{float(download) / 1024:.2f}"
+    
+    # Статус подписки
+    from datetime import datetime, timezone
+    
+    now = datetime.now(timezone.utc)
+    
+    # Приводим subscription_end к aware datetime, если он naive
+    if user.subscription_end:
+        # Проверяем тип даты
+        if user.subscription_end.tzinfo is None:
+            # Если naive, добавляем UTC
+            subscription_end = user.subscription_end.replace(tzinfo=timezone.utc)
+        else:
+            subscription_end = user.subscription_end
+        
+        if subscription_end > now:
+            days_left = (subscription_end - now).days
+            status_text = f"📅 Подписка активна\n⏳ Осталось дней: **{days_left}**"
+        else:
+            status_text = "⚠️ **Подписка истекла**"
+    else:
+        status_text = "⚠️ **Подписка не установлена**"
+    
     await callback.message.delete()
+    
     text = (
         "📊 **Ваша статистика:**\n\n"
         f"🔼 Загружено: `{upload} {upload_size}`\n"
-        f"🔽 Скачано: `{download} {download_size}`\n"
+        f"🔽 Скачано: `{download} {download_size}`\n\n"
+        f"{status_text}"
     )
+    
     await callback.message.answer(text, parse_mode='Markdown')
 
 @router.callback_query(F.data == "admin_network_stats")

@@ -1,7 +1,10 @@
+# Python
+__pycache__/
+*.pyc
 .env
-.venv
-venv
-__pycache__
-temp
-*.db
-*.json
+
+# Logs
+*.log
+
+# Local configs
+config_local.py

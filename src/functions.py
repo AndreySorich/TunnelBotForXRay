@@ -6,7 +6,23 @@ import random
 from config import config
 from urllib.parse import urljoin
 
+# В handlers.py, database.py, functions.py и других модулях
+import logging
+
+# Получаем логгер для текущего модуля
 logger = logging.getLogger(__name__)
+
+# Пример использования
+logger.info("Сообщение для bot.log и консоли")
+
+# Для платежей используйте специальный логгер
+payments_logger = logging.getLogger('payments')
+payments_logger.info("Платеж успешен")  # Только в payments.log
+
+# Для ошибок
+error_logger = logging.getLogger('errors')
+error_logger.error("Критическая ошибка")  # Только в errors.log
+
 
 class XUIAPI:
     def __init__(self):
@@ -159,6 +175,7 @@ class XUIAPI:
                 "totalGB": 0,
                 "expiryTime": 0,
                 "enable": True,
+                "tgId": str(telegram_id),
                 "tgId": "",
                 "subId": "",
                 "reset": 0,
@@ -320,7 +337,7 @@ class XUIAPI:
                 "settings": json.dumps(settings, indent=2),
                 "streamSettings": inbound["streamSettings"],
                 "sniffing": inbound["sniffing"],
-                "allocate": inbound["allocate"]
+                "allocate": inbound.get("allocate")
             }
             
             return await self.update_inbound(config.INBOUND_ID, update_data)
@@ -479,7 +496,7 @@ def generate_vless_url(profile_data: dict) -> str:
     
     return (
         f"vless://{profile_data['client_id']}@{config.XUI_HOST}:{profile_data['port']}"
-        f"?type=tcp&security=reality"
+        f"?type=tcp&security=reality&encryption=none"  # <-- добавили encryption=none
         f"&pbk={config.REALITY_PUBLIC_KEY}"
         f"&fp={config.REALITY_FINGERPRINT}"
         f"&sni={config.REALITY_SNI}"
