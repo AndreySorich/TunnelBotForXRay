@@ -5,6 +5,8 @@ from typing import Optional
 from aiogram import Bot
 from database import get_user
 from config import config
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,27 +32,33 @@ async def send_subscription_extended_notification(
         
         if is_admin_action:
             message_text = (
-                "👑 *Администратор продлил вашу подпичку!*\n\n"
-                f"📅 **Продлено на:** {months} {suffix}\n"
-                f"📅 **Новая дата окончания:** {end_date_str}\n\n"
-                "✅ VPN-сервис продолжит работать без перерывов.\n"
-                "Спасибо за использование нашего сервиса! 🚀"
-            )
-        else:
-            message_text = (
-                "🎉 *Ваша подписка успешно продлена!*\n\n"
-                f"📅 **Продлено на:** {months} {suffix}\n"
-                f"📅 **Новая дата окончания:** {end_date_str}\n\n"
-                "✅ VPN-сервис продолжит работать без перерывов.\n"
-                "Спасибо за использование нашего сервиса! 🚀"
-            )
-        
+            "👑 *Администратор продлил вашу подписку!*\n\n"
+            f"📅 *Продлено на:* {months} {suffix}\n"
+            f"📅 *Новая дата окончания:* `{end_date_str}`\n\n"
+            "✅ VPN-сервис активен и продолжит работать без перерывов.\n"
+            "Спасибо, что пользуетесь нашим сервисом! 🚀\n\n"
+            "🔌 *Для подключения VPN нажмите кнопку ниже* ⬇️"
+        )
+
+        # Кнопка подключения
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="✅ Подключить VPN",
+                        callback_data="connect"
+                    )
+                ]
+            ]
+        )
+
         await bot.send_message(
             chat_id=telegram_id,
             text=message_text,
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=keyboard
         )
-        
+     
         logger.info(f"✅ Subscription extended notification sent to {telegram_id}")
         payments_logger = logging.getLogger('payments')
         payments_logger.info(

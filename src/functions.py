@@ -447,6 +447,33 @@ class XUIAPI:
         if self.session:
             await self.session.close()
 
+async def force_check_subscription(user_id: int):
+    """
+    Принудительная проверка и обновление статуса подписки
+    """
+    user = await get_user(user_id)
+    if not user:
+        return "not_found"
+    
+    status, _ = check_subscription_status(user)
+    
+    # Если подписка истекла, но в XUI еще есть клиент
+    if status == "Истекла" and user.vless_profile_data:
+        try:
+            profile_data = json.loads(user.vless_profile_data)
+            email = profile_data.get("email")
+            if email and email != "N/A":
+                # Удаляем из XUI
+                await delete_client_by_email(email)
+                # Очищаем данные профиля
+                await update_user_profile(user_id, vless_profile_data=None)
+                logger.info(f"🧹 Удален истекший профиль: {user_id}")
+        except Exception as e:
+            logger.error(f"Ошибка при удалении истекшего профиля: {e}")
+    
+    return status
+
+
 async def create_vless_profile(telegram_id: int):
     api = XUIAPI()
     try:

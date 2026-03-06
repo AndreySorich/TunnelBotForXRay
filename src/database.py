@@ -148,22 +148,32 @@ async def update_subscription(telegram_id: int, days: int, reset_notifications: 
             return user.subscription_end
         return None
 
+from sqlalchemy import or_
+
 async def get_all_users(with_active_subscription: bool = None):
     """Получить всех пользователей с фильтрацией по подписке"""
     with Session() as session:
         query = session.query(User)
-        
-        if with_active_subscription is not None:
-            now = datetime.utcnow()
-            if with_active_subscription:
-                query = query.filter(User.subscription_end > now)
-            else:
-                query = query.filter(
-                    (User.subscription_end <= now) | 
-                    (User.subscription_end == None)
+        now = datetime.utcnow()
+
+        if with_active_subscription is True:
+            query = query.filter(
+                User.subscription_end.isnot(None),
+                User.subscription_end > now,
+                User.vless_profile_data.isnot(None)
+            )
+
+        elif with_active_subscription is False:
+            query = query.filter(
+                or_(
+                    User.subscription_end.is_(None),
+                    User.subscription_end <= now,
+                    User.vless_profile_data.is_(None)
                 )
-        
+            )
+
         return query.all()
+
 
 async def get_users_with_expiring_subscription(hours: int = 24):
     """Получить пользователей с истекающей подпиской"""
