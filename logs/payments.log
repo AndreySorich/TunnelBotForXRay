@@ -1,0 +1,7 @@
+2025-12-14 16:11:39,064 | INFO | PAY_INIT | user_id=259810935 | months=6 | price=600
+2025-12-14 16:14:01,199 | INFO | PAY_INIT | user_id=259810935 | months=12 | price=840
+2025-12-14 16:20:02,637 | INFO | PAY_INIT | user_id=463194607 | months=1 | price=100
+2025-12-14 19:16:11,583 | INFO | PAY_INIT | user_id=259810935 | months=3 | price=270
+2025-12-14 19:20:50,521 | INFO | PAY_INIT | user_id=259810935 | months=12 | price=840
+2025-12-14 20:19:54,611 | INFO | PAY_INIT | user_id=216601537 | months=1 | price=100
+2025-12-18 23:35:49,146 | INFO | PAY_INIT | user_id=259810935 | months=3 | price=270

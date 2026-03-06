@@ -1,12 +1,1 @@
 # Python
-__pycache__/
-*.pyc
-.env
-
-# Logs
-*.log
-
-# Local configs
-config_local.py
-src/*.db
-src/*.csv

@@ -1,0 +1,56 @@
+2025-12-26 17:31:13 - payments - INFO - PAY_INIT | user_id=259810935 | months=12 | price=840
+2025-12-26 21:48:26 - payments - INFO - PAY_INIT | user_id=259810935 | months=6 | price=800
+2025-12-26 22:24:27 - payments - INFO - ADMIN_ADDED_TIME | user_id=463194607 | months=0 | days=0 | hours=1 | minutes=10 | total_months=0.0 | new_end=2025-12-27 09:47:17
+2025-12-26 22:24:27 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=463194607 | months=0.0 | end_date=27.12.2025 09:47
+2025-12-26 22:25:49 - payments - INFO - PAY_INIT | user_id=463194607 | months=1 | price=200
+2025-12-26 22:26:45 - payments - INFO - SUBSCRIPTION_EXTENDED | user_id=463194607 | months=1 | new_end=2026-01-26 09:47:17 | admin_action=True
+2025-12-26 22:26:45 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=463194607 | months=1 | end_date=26.01.2026 09:47
+2025-12-26 22:46:26 - payments - INFO - PAY_INIT | user_id=463194607 | months=1 | price=200
+2025-12-31 15:08:16 - payments - INFO - PAY_INIT | user_id=259810935 | months=1 | price=200
+2026-01-02 21:14:39 - payments - INFO - ADMIN_ADDED_TIME | user_id=449153776 | months=12 | days=30 | hours=12 | minutes=12 | total_months=13.0 | new_end=2027-01-31 06:20:54
+2026-01-02 21:14:39 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=449153776 | months=13.0 | end_date=31.01.2027 06:20
+2026-01-05 14:55:59 - payments - INFO - PAY_INIT | user_id=259810935 | months=6 | price=800
+2026-01-05 14:56:36 - payments - INFO - SUBSCRIPTION_EXTENDED | user_id=259810935 | months=6 | new_end=2036-06-18 22:50:10 | admin_action=True
+2026-01-05 14:56:36 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=259810935 | months=6 | end_date=18.06.2036 22:50
+2026-01-09 14:23:35 - payments - INFO - SUBSCRIPTION_EXTENDED | user_id=259810935 | months=1 | new_end=2036-07-18 22:50:10 | admin_action=False
+2026-01-09 14:23:35 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=259810935 | months=1 | end_date=18.07.2036 22:50
+2026-01-09 14:29:46 - payments - INFO - PAY_INIT | user_id=259810935 | months=6 | price=800
+2026-01-09 15:12:38 - payments - INFO - PAY_INIT | user_id=259810935 | months=3 | price=600
+2026-01-12 12:38:25 - payments - INFO - ADMIN_ADDED_TIME | user_id=7799211078 | months=12 | days=30 | hours=12 | minutes=12 | total_months=13.0 | new_end=2027-02-16 20:17:38
+2026-01-12 12:44:17 - payments - INFO - ADMIN_ADDED_TIME | user_id=924938576 | months=12 | days=30 | hours=10 | minutes=10 | total_months=13.0 | new_end=2027-02-09 19:46:34
+2026-01-12 12:44:17 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=924938576 | months=13.0 | end_date=09.02.2027 19:46
+2026-01-12 12:45:36 - payments - INFO - ADMIN_REMOVED_TIME | user_id=7799211078 | months=0 | days=0 | hours=10 | minutes=0 | total_months=0.0 | new_end=2027-02-16 10:17:38
+2026-01-12 12:46:02 - payments - INFO - ADMIN_REMOVED_TIME | user_id=7799211078 | months=12 | days=30 | hours=12 | minutes=12 | total_months=13.0 | new_end=2026-01-21 22:05:38
+2026-01-12 12:46:58 - payments - INFO - ADMIN_REMOVED_TIME | user_id=7799211078 | months=0 | days=10 | hours=0 | minutes=0 | total_months=0.3 | new_end=2026-01-12 09:46:58
+2026-01-12 12:47:30 - payments - INFO - ADMIN_ADDED_TIME | user_id=7799211078 | months=0 | days=0 | hours=10 | minutes=0 | total_months=0.0 | new_end=2026-01-12 19:47:30
+2026-01-13 23:33:17 - payments - INFO - PAY_INIT | user_id=259810935 | months=3 | price=600
+2026-01-21 19:19:15 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-21 19:19:24 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-21 20:16:55 - payments - INFO - ADMIN_REMOVED_TIME | user_id=8437024490 | months=0 | days=0 | hours=0 | minutes=30 | total_months=0.0 | new_end=2026-01-24 15:33:46
+2026-01-21 20:17:45 - payments - INFO - ADMIN_REMOVED_TIME | user_id=8437024490 | months=0 | days=2 | hours=20 | minutes=0 | total_months=0.1 | new_end=2026-01-21 19:33:46
+2026-01-21 20:19:23 - payments - INFO - ADMIN_REMOVED_TIME | user_id=8437024490 | months=0 | days=0 | hours=2 | minutes=0 | total_months=0.0 | new_end=2026-01-21 17:33:46
+2026-01-21 20:20:18 - payments - INFO - ADMIN_ADDED_TIME | user_id=8437024490 | months=0 | days=0 | hours=3 | minutes=20 | total_months=0.0 | new_end=2026-01-21 20:53:46
+2026-01-21 20:20:18 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=8437024490 | months=0.0 | end_date=21.01.2026 20:53
+2026-01-21 23:55:25 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-21 23:59:18 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:06:04 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:12:15 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:12:26 - payments - INFO - SUBSCRIPTION_EXTENDED | user_id=8437024490 | months=1 | new_end=2026-02-20 21:12:26 | admin_action=True
+2026-01-22 00:12:26 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=8437024490 | months=1 | end_date=20.02.2026 21:12
+2026-01-22 00:25:50 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:26:02 - payments - INFO - SUBSCRIPTION_EXTENDED | user_id=8437024490 | months=1 | new_end=2026-03-22 21:12:26 | admin_action=True
+2026-01-22 00:26:02 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=8437024490 | months=1 | end_date=22.03.2026 21:12
+2026-01-22 00:28:44 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:28:49 - payments - INFO - SUBSCRIPTION_EXTENDED | user_id=8437024490 | months=1 | new_end=2026-04-21 21:12:26 | admin_action=True
+2026-01-22 00:28:49 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=8437024490 | months=1 | end_date=21.04.2026 21:12
+2026-01-22 00:37:33 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:37:53 - payments - INFO - SUBSCRIPTION_EXTENDED | user_id=8437024490 | months=1 | new_end=2026-05-21 21:12:26 | admin_action=True
+2026-01-22 00:39:29 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:39:34 - payments - INFO - SUBSCRIPTION_EXTENDED | user_id=8437024490 | months=1 | new_end=2026-06-20 21:12:26 | admin_action=True
+2026-01-22 00:39:34 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=8437024490 | months=1 | end_date=20.06.2026 21:12
+2026-01-22 00:42:29 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:43:35 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:46:27 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:49:24 - payments - INFO - PAY_INIT | user_id=8437024490 | months=1 | price=200
+2026-01-22 00:49:31 - payments - INFO - SUBSCRIPTION_EXTENDED | user_id=8437024490 | months=1 | new_end=2026-07-20 21:12:26 | admin_action=True
+2026-01-22 00:49:31 - payments - INFO - SUBSCRIPTION_NOTIFICATION_SENT | user_id=8437024490 | months=1 | end_date=20.07.2026 21:12
